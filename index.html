@@ -83,7 +83,7 @@
             zoomSnap: 0.1
         }).setView(center, 2.6)
 
-        d3.json('/geojsons/can-usa.json', function (canusa) {
+        d3.json('geojsons/can-usa.json', function (canusa) {
             makeMap(canusa);
         });
 
