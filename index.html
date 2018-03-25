@@ -1,0 +1,233 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+
+    <link rel="icon" href="favicon.ico?" type="image/x-icon">
+    <title>How far from Calgary</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.3.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway:400,700" />
+    <link rel="stylesheet" href="style.css" />
+    <!-- <link rel="stylesheet" href="normalize.css" /> -->
+
+</head>
+
+<body>
+
+    <header>
+        <p class='head-text'>How Far Am I From Calgary?</p>
+        <p class='subheader'> cause who doesn't want to know how far Spotsylvania, VA is from Calgary, AB? Unrelated, the curved lines are made by calculating the midpoint of each line and then Bezier Spline-ing it UP to curve 'em'. Then I converted that turfjs mess to geojson so I could use Leaflet.TextPath.
+    </header>
+
+
+    <div id="map">
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.3.1/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/4.12.0/d3.min.js"></script>
+    <script src="leaflet.textpath.js"></script>
+    <script src="leaflet.curve.js"></script>
+    <script src='https://npmcdn.com/@turf/turf/turf.min.js'></script>
+
+
+    <script>
+        var proj = d3.geoAlbers()
+            .scale(.6);
+
+        var AlbersProjection = {
+
+            project: function (latLng) {
+                var point = proj([latLng.lng, latLng.lat]);
+                return point ?
+                    new L.Point(point[0], point[1]) :
+                    new L.Point(0, 0);
+            },
+
+            unproject: function (point) {
+                var latLng = proj.invert([point.x, point.y]);
+                return new L.LatLng(latLng[1], latLng[0]);
+            }
+        }
+
+        var AlbersCRS = L.extend({}, L.CRS, {
+            projection: AlbersProjection,
+            transformation: new L.Transformation(1, 0, 1, 0),
+            infinite: true
+        });
+
+        var honlatlng = [21.2725, -157.8215],
+            calglatlng = [51.0514, -114.0703],
+            spotsylatlng = [38.2049, -77.7716],
+            woodlandhillslatlng = [34.1654, -118.6096];
+
+        var cityLatLngs = {
+            honolulu: [21.2725, -157.8215],
+            calgary: [51.0514, -114.0703],
+            spotsy: [38.2049, -77.7716],
+            woodland: [34.1654, -118.6096]
+        };
+
+        var honolulu = L.circleMarker(honlatlng),
+            calgary = L.circleMarker(calglatlng),
+            spotsy = L.circleMarker(spotsylatlng),
+            woodlandHills = L.circleMarker(woodlandhillslatlng);
+
+
+        var center = [52.9219, -129.3316];
+
+        var map = new L.Map('map', {
+            crs: AlbersCRS,
+            zoomControl: false,
+            zoomSnap: 0.1
+        }).setView(center, 2.6)
+
+        d3.json('/geojsons/can-usa.json', function (canusa) {
+            makeMap(canusa);
+        });
+
+        function makeMap(canusa) {
+
+            var cities = L.layerGroup([honolulu, calgary, spotsy, woodlandHills]);
+
+            var states = L.geoJson(canusa, {
+                    style: {
+                        color: '#000',
+                        weight: 0.5,
+                        fillOpacity: 0,
+                    }
+                })
+                .addTo(map);
+
+            cities.eachLayer(function (layer) {
+                layer.setStyle({
+                    color: 'red',
+                    stroke: false,
+                    fillColor: 'black',
+                    fillOpacity: 0.8,
+                    radius: 4
+                })
+            });
+            cities.addTo(map);
+            createCurves();
+        }
+
+        function createCurves() {
+
+            var lat = calglatlng[0],
+                lng = calglatlng[1],
+                cLat, cLng;
+
+            for (var x in cityLatLngs) {
+                if (cityLatLngs[x][0] != lat) {
+
+                    cLat = cityLatLngs[x][0];
+                    cLng = cityLatLngs[x][1];
+
+                    var offsetX = lng - cLng;
+                    var offsetY = lat - cLat;
+
+                    var r = Number(Math.sqrt(Math.pow(offsetX, 2) + Math.pow(offsetY, 2)));
+                    var theta = Math.atan2(offsetY, offsetX);
+
+                    var thetaOffset = (3.14 / 10);
+
+                    var r2 = (r / 2) / (Math.cos(thetaOffset));
+                    var theta2 = theta + thetaOffset;
+
+                    var midpointX = (r2 * Math.cos(theta2)) + cLng;
+                    var midpointY = (r2 * Math.sin(theta2)) + cLat;
+
+                    var midpointLatLng = [midpointY, midpointX];
+
+                    var curvedPath = L.curve(
+                        [
+                            'M', [cLat, cLng],
+                            'Q', midpointLatLng, [lat, lng]
+                        ]);
+
+                    var latLngArray = [
+                        curvedPath._coords[1],
+                        curvedPath._coords[3],
+                        curvedPath._coords[4]
+                    ];
+
+                    var tryLineString = turf.lineString(latLngArray);
+
+                    if (lat == spotsylatlng[0]) {
+
+                        flipVAline(tryLineString);
+
+                    } else {
+
+                        convertToGeoJsonPls(tryLineString);
+                    }
+
+                }
+            }
+        }
+
+        function flipVAline(tryLineString) {
+
+            var curved = turf.bezierSpline(turf.flip(tryLineString));
+
+            var vageoj = L.geoJson(curved, {
+                style: {
+                    color: 'red'
+                },
+                onEachFeature: function (feature, layer) {
+                    layer.setText('hi   !', {
+                        center: true,
+                        offset: 30,
+                        // repeat: true,
+                        //orientation: 'flip',
+                        attributes: {
+                            fill: 'black'
+                        }
+                    });
+                }
+            }).addTo(map);
+
+        }
+
+
+        function convertToGeoJsonPls(tryLineString) {
+
+
+            var dist = turf.distance(turf.point(cityLatLngs.honolulu), turf.point(cityLatLngs.calgary), {
+                    units: 'miles'
+                });
+
+            var curved = turf.bezierSpline(turf.flip(tryLineString));
+
+            var pGeoJ = L.geoJson(curved, {
+                style: {
+                    color: 'red'
+                },
+                onEachFeature: function (feature, layer) {
+                    layer.setText('yooo the words curve too!', {
+                        center: true,
+                        //below: true,
+                        offset: -5,
+                        // repeat: true,
+                        orientation: 0,
+                        attributes: {
+                            fill: 'black',
+
+                        }
+                    });
+                }
+            }).addTo(map);
+
+            function getText() {
+                return turf.distance(turf.point(cityLatLngs.honolulu), turf.point(cityLatLngs.calgary), {
+                    units: 'miles'
+                })
+            }
+
+        }
+    </script>
+</body>
+
+</html>
